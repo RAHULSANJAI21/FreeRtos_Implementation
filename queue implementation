@@ -1,0 +1,99 @@
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+#include "stm32f4xx.h"
+QueueHandle_t xQueue;
+static void vSenderTask(void * pvParameters)
+{
+	int32_t lvalueToSend;
+	BaseType_t xStatus;
+	lvalueToSend=(int32_t)pvParameters;
+	while(1)
+	{
+		xStatus=xQueueSendToBack(xQueue,&lvalueToSend,0);
+	}
+	if(xStatus !=pdPASS)
+	{
+		USART2_SendString("Could not Send to Queue\r\n");
+	}
+}
+void vReceiverTask(void *pvParameters)
+{
+	int32_t lReceivedValue;
+	BaseType_t xStatus;
+	TickType_t xTickToWait=pdMS_TO_TICKS(100);
+	char buffer[50];
+	while(1)
+	{
+			if(uxQueueMessagesWaiting(xQueue)!=0)
+			{
+				USART2_SendString("Queue should have been empty\r\n");
+			}
+
+			xStatus=xQueueReceive(xQueue,&lReceivedValue,xTickToWait);
+			if(xStatus=pdPASS)
+			{
+				 sprintf(buffer, "Received: %ld\r\n", lReceivedValue);
+				            USART2_SendString(buffer);
+			}
+			else
+			{
+				USART2_SendString("Could not receive from queue\r\n");
+			}
+	}
+}
+
+void USART_INIT() {
+    // Enable clocks
+	RCC->CR |=(1<<0);
+    RCC->AHB1ENR |= (1 << 2);  // GPIOC clock enable
+    RCC->APB2ENR |= (1 << 5);   // USART6 clock enable
+
+    // PC6 as TX (AF mode)
+    GPIOC->MODER &= ~(3 << (6 * 2));
+    GPIOC->MODER |= (2 << (6 * 2));
+    GPIOC->AFR[0] |= (8 << (6 * 4));
+
+    // PC7 as RX (AF mode)
+    GPIOC->MODER &= ~(3 << (7 * 2));
+    GPIOC->MODER |= (2 << (7 * 2));
+    GPIOC->AFR[0] |= (8 << (7 * 4));
+
+    // Configure USART6
+    USART6->CR1 |= (1 << 13);
+    USART6->CR1 &= ~(1 << 12);// Enable USART
+    USART6->CR2 &= ~(3 << 12);
+    USART6->BRR = (16000000 + (9600/2)) / 9600; ; // Baud rate 9600
+          // 8 data bits
+    USART6->CR1 |= (1 << 3);
+   // USART6->DR|=(1<<0);// Enable transmitter
+
+}
+
+void USART2_Write(char ch) {
+    // Wait until TXE (Transmit data register empty) is set
+    while (!(USART6->SR & (1 << 7)));
+    USART6->DR = ch;
+}
+
+void USART2_SendString(char *str) {
+    while (*str) {
+        USART2_Write(*str++);
+    }
+}
+
+int main() {
+    USART_INIT();
+
+    xQueue=xQueueCreate(5,sizeof(int32_t));
+
+    if(xQueue !=NULL)
+    {
+    	 xTaskCreate(vSenderTask, "Sender1", 1000, (void *) 100, 1, NULL);
+    	 xTaskCreate(vSenderTask, "Sender2", 1000, (void *) 200, 1, NULL);
+    	 xTaskCreate(vReceiverTask,"Receiver",1000,NULL,2,NULL);
+    	  vTaskStartScheduler(); // Start the scheduler
+    }
+
+    while (1);
+}
