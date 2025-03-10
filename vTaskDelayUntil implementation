@@ -1,0 +1,79 @@
+#include "FreeRTOS.h"
+#include "task.h"
+#include "stm32f4xx.h"
+
+void vTaskFunction(void * pvParameters)
+{
+	char * PcChar;
+	PcChar=pvParameters;
+	TickType_t xLastTimeWakeup;
+	xLastTimeWakeup = xTaskGetTickCount();
+	while(1)
+	{
+		USART2_SendString(PcChar);
+		vTaskDelayUntil(&xLastTimeWakeup,pdMS_TO_TICKS(5000));
+		//vTaskDelay(pdMS_TO_TICKS(100));
+	}
+
+}
+
+void vContinuousTask(void *pvParameters)
+{
+	char * pcChar;
+	pcChar=pvParameters;
+
+	while(1)
+	{
+		USART2_SendString(pcChar);
+	}
+}
+void USART_INIT() {
+    // Enable clocks
+	RCC->CR |=(1<<0);
+    RCC->AHB1ENR |= (1 << 2);  // GPIOC clock enable
+    RCC->APB2ENR |= (1 << 5);   // USART6 clock enable
+
+    // PC6 as TX (AF mode)
+    GPIOC->MODER &= ~(3 << (6 * 2));
+    GPIOC->MODER |= (2 << (6 * 2));
+    GPIOC->AFR[0] |= (8 << (6 * 4));
+
+    // PC7 as RX (AF mode)
+    GPIOC->MODER &= ~(3 << (7 * 2));
+    GPIOC->MODER |= (2 << (7 * 2));
+    GPIOC->AFR[0] |= (8 << (7 * 4));
+
+    // Configure USART6
+    USART6->CR1 |= (1 << 13);
+    USART6->CR1 &= ~(1 << 12);// Enable USART
+    USART6->CR2 &= ~(3 << 12);
+    USART6->BRR = (16000000 + (9600/2)) / 9600; ; // Baud rate 9600
+          // 8 data bits
+    USART6->CR1 |= (1 << 3);
+   // USART6->DR|=(1<<0);// Enable transmitter
+
+}
+
+void USART2_Write(char ch) {
+    // Wait until TXE (Transmit data register empty) is set
+    while (!(USART6->SR & (1 << 7)));
+    USART6->DR = ch;
+}
+
+void USART2_SendString(char *str) {
+    while (*str) {
+        USART2_Write(*str++);
+    }
+}
+static const char * pcTextForTask1 = "Periodic Task is running\r\n";
+static const char * pcTextForTask2 = "Continuous Task is running\r\n";
+int main() {
+    USART_INIT();
+    xTaskCreate(vTaskFunction, "Task1", 128, (void *) pcTextForTask1, 2, NULL);
+
+    xTaskCreate(vContinuousTask, "Task2", 128, (void *)pcTextForTask2, 1, NULL);
+
+    vTaskStartScheduler(); // Start the scheduler
+
+    while (1);
+}
